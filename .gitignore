@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Editor / OS cruft
+Thumbs.db
+*.swp
+
+# Local env (none used by this extension, but guard against accidents)
+.env
+.env.*
+
+# Build output (if you later zip for the store)
+*.zip

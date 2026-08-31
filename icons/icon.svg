@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="matcha" x1="0" y1="0" x2="128" y2="128" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#adba98"/>
+      <stop offset="0.55" stop-color="#93a67c"/>
+      <stop offset="1" stop-color="#788d63"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="128" height="128" rx="28" fill="url(#matcha)"/>
+  <!-- speaker body + cone -->
+  <path d="M 34 52 H 48 L 66 34 V 94 L 48 76 H 34 Z"
+        fill="#ffffff" stroke="#ffffff" stroke-width="4" stroke-linejoin="round"/>
+  <!-- sound waves -->
+  <g fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round">
+    <path d="M 78 50 Q 88 64 78 78"/>
+    <path d="M 88 40 Q 104 64 88 88"/>
+  </g>
+</svg>
