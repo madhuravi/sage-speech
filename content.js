@@ -1,7 +1,7 @@
 // content.js — runs on Google search result pages.
 // Responsibilities:
 //   1. Locate the "AI Overview" block (best-effort, resilient to Google's markup churn).
-//   2. Inject a floating "Listen" button when an overview is present.
+//   2. Inject an inline "Listen" button next to the overview title.
 //   3. Speak the overview text via the Web Speech API.
 //   4. Respond to commands from the popup (play / pause / resume / stop / status).
 
@@ -9,7 +9,6 @@
   "use strict";
 
   const synth = window.speechSynthesis;
-  let currentUtterance = null;
 
   // ---------------------------------------------------------------------------
   // 1. Finding the AI Overview text
@@ -169,16 +168,9 @@
     const voice = pickVoice(settings.voiceURI);
     if (voice) utter.voice = voice;
 
-    utter.onend = () => {
-      currentUtterance = null;
-      updateButton("idle");
-    };
-    utter.onerror = () => {
-      currentUtterance = null;
-      updateButton("idle");
-    };
+    utter.onend = () => updateButton("idle");
+    utter.onerror = () => updateButton("idle");
 
-    currentUtterance = utter;
     synth.speak(utter);
     updateButton("playing");
     return { ok: true };
@@ -191,7 +183,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // 3. Floating button UI
+  // 3. Inline button UI
   // ---------------------------------------------------------------------------
   let btn = null;
 
@@ -250,9 +242,8 @@
 
   function flashButton(msg) {
     if (!btn) return;
-    const prev = btn.textContent;
     btn.textContent = msg;
-    setTimeout(() => updateButton(statusOf() === "idle" ? "idle" : statusOf()), 1800);
+    setTimeout(() => updateButton(statusOf()), 1800);
   }
 
   // ---------------------------------------------------------------------------
@@ -263,11 +254,6 @@
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
   ensureButton(); // in case it's already present
-
-  // Voices can load asynchronously.
-  if (typeof synth.onvoiceschanged !== "undefined") {
-    synth.onvoiceschanged = () => {};
-  }
 
   // ---------------------------------------------------------------------------
   // 5. Popup <-> content messaging
