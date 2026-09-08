@@ -1,8 +1,13 @@
 # Sage Speech
 
-A Chrome extension that reads the **AI summary shown at the top of your Google
-search results** aloud, using your browser's built-in text-to-speech (the Web
-Speech API). No servers, no API keys, no data leaves your machine.
+A Chrome extension that reads text aloud using your browser's built-in
+text-to-speech (the Web Speech API). It does two things:
+
+- Reads the **AI summary shown at the top of your Google search results**.
+- Reads **any text you highlight** on sites you explicitly enable — a small 🔊
+  bubble appears next to your selection.
+
+No servers, no API keys, no data leaves your machine.
 
 > **Not affiliated with or endorsed by Google.** "Google" and related feature
 > names are trademarks of Google LLC, used here only to describe where the
@@ -24,14 +29,28 @@ Speech API). No servers, no API keys, no data leaves your machine.
 3. Use **Pause / Resume / Stop**, and adjust **voice, speed, and pitch** in the popup.
    Those preferences are saved locally.
 
+### Read highlighted text on any site
+
+1. Open the extension popup on the site you want.
+2. Under **Read highlighted text**, click **Enable on this site**. Chrome asks you
+   to approve access to that one domain — the extension requests nothing up front.
+3. Highlight any text on the page; a small sage **🔊** bubble appears next to it.
+   Click it to read the selection, and click again to pause/resume.
+4. Click **Disable on this site** any time to revoke that domain's access.
+
 ## How it works
 
+- `speech.js` is a shared helper (voice ranking, settings, `speechSynthesis`
+  playback) loaded before the other content scripts.
 - `content.js` runs on `google.com/search` pages, locates the summary text
   (anchoring on the on-page label and ARIA hints rather than fragile class names),
-  and speaks it with `speechSynthesis`. It auto-selects the highest-quality voice
-  installed on your system.
-- `popup.html` / `popup.js` provide the control panel and persist settings via
-  `chrome.storage.sync`.
+  and speaks it. It auto-selects the highest-quality voice installed on your system.
+- `selection.js` runs only on sites you've enabled; it shows the 🔊 bubble next to
+  your selection and reads it.
+- `background.js` (service worker) registers/unregisters `selection.js` per domain
+  as you opt in or out, using **optional** host permissions granted one site at a time.
+- `popup.html` / `popup.js` provide the control panel, the per-site toggle, and
+  persist settings via `chrome.storage.sync`.
 - Everything runs **on your device**. See [PRIVACY.md](./PRIVACY.md).
 
 ## Publishing to the Chrome Web Store
@@ -42,7 +61,9 @@ This build is prepared for public listing:
 - **Disclaimer** of non-affiliation appears in the popup, README, and privacy policy.
 - **Privacy policy** ([PRIVACY.md](./PRIVACY.md)) states the extension is fully
   local — you'll paste its contents (or host it) and link it in the listing.
-- **Permissions** are minimal (`activeTab`, `scripting`, `storage`, Google search hosts).
+- **Permissions** are minimal: `activeTab`, `scripting`, `storage`, and the Google
+  search hosts. Access to other sites is **optional** and requested one domain at a
+  time only when you enable highlighted-text reading there.
 
 Steps:
 
@@ -76,9 +97,12 @@ use or sharing the unpacked folder, none of this applies.
 ```
 sage-speech/
 ├── manifest.json     # MV3 manifest
-├── content.js        # finds the summary, inline button, speech engine
+├── speech.js         # shared voice ranking + speechSynthesis playback
+├── content.js        # finds the Google AI summary + inline Listen button
+├── selection.js      # floating 🔊 bubble that reads highlighted text
+├── background.js     # per-site opt-in for highlighted-text reading
 ├── popup.html        # control panel UI
-├── popup.js          # popup logic + settings persistence
+├── popup.js          # popup logic, site toggle, settings persistence
 ├── icons/            # sage-green speaker icon (16/48/128 + source SVG)
 ├── PRIVACY.md        # privacy policy (fully local)
 └── README.md

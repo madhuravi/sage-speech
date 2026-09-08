@@ -13,6 +13,10 @@ the extension does happens locally, inside your own browser.
   press "Listen," the extension reads that text from the page you are already
   viewing and passes it to your browser's built-in text-to-speech engine
   (the Web Speech API) so it can be spoken aloud.
+- **Text you highlight, only on sites you explicitly enable.** If you turn on
+  "Read highlighted text" for a specific site, the extension reads the text you
+  select on that site and speaks it the same way. It runs on a site only after you
+  approve that exact domain, and only until you disable it.
 
 ## What the extension stores
 
@@ -30,10 +34,15 @@ the extension does happens locally, inside your own browser.
 
 ## Permissions and why they are needed
 
-- `activeTab` / `scripting` — to read the summary text on the search page you have open.
-- `storage` — to remember your voice, rate, and pitch preferences.
-- Host access to `google.com` search pages — so the extension only runs where the
+- `activeTab` / `scripting` — to read the summary text on the search page you have
+  open, and to run the highlighted-text reader on sites you enable.
+- `storage` — to remember your voice, rate, and pitch preferences, and which sites
+  you have enabled highlighted-text reading on.
+- Host access to `google.com` search pages — so the extension runs where the
   summary appears.
+- **Optional** host access to other sites — never granted at install. It is
+  requested one domain at a time, only when you choose to enable highlighted-text
+  reading there, and is released when you disable it.
 
 ## Third parties
 

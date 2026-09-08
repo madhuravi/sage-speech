@@ -2,13 +2,13 @@
 // Responsibilities:
 //   1. Locate the "AI Overview" block (best-effort, resilient to Google's markup churn).
 //   2. Inject an inline "Listen" button next to the overview title.
-//   3. Speak the overview text via the Web Speech API.
+//   3. Speak the overview text via the shared speech module (speech.js).
 //   4. Respond to commands from the popup (play / pause / resume / stop / status).
 
 (() => {
   "use strict";
 
-  const synth = window.speechSynthesis;
+  const { synth, speakText, statusOf } = window.__sageSpeech;
 
   // ---------------------------------------------------------------------------
   // 1. Finding the AI Overview text
@@ -90,96 +90,20 @@
   }
 
   // ---------------------------------------------------------------------------
-  // 2. Speech control
+  // 2. Speak the overview
   // ---------------------------------------------------------------------------
-  async function loadSettings() {
-    return new Promise((resolve) => {
-      try {
-        chrome.storage.sync.get(
-          { rate: 1.0, pitch: 1.0, voiceURI: "" },
-          (v) => resolve(v)
-        );
-      } catch (_) {
-        resolve({ rate: 1.0, pitch: 1.0, voiceURI: "" });
-      }
-    });
-  }
-
-  // Rank a voice by likely quality. Higher is better. Used only for the default
-  // choice — an explicit user selection in the popup always wins.
-  function scoreVoice(v) {
-    const name = (v.name || "").toLowerCase();
-    const lang = (v.lang || "").toLowerCase();
-    let s = 0;
-
-    // Language: strongly prefer English; en-US edges out other English locales.
-    if (/^en(-|_|$)/.test(lang)) s += 100;
-    if (/^en[-_]us/.test(lang)) s += 10;
-
-    // Quality tiers, best first. macOS "Premium"/"Enhanced" and neural/Siri
-    // voices are far more natural than the legacy defaults.
-    if (name.includes("premium")) s += 120;
-    else if (name.includes("enhanced")) s += 90;
-    if (name.includes("neural")) s += 90;
-    if (name.includes("siri")) s += 80;
-    if (name.includes("natural")) s += 70;
-    // Chrome's bundled network voices ("Google US English") sound good too.
-    if (name.includes("google")) s += 60;
-
-    // Penalize the tinny legacy voices.
-    if (name.includes("compact")) s -= 80;
-    if (name.includes("eloquence")) s -= 60;
-
-    // Gentle nudge toward voices Google/Apple tend to ship as the nicer defaults.
-    if (/(ava|zoe|evan|allison|samantha|jenny|aria|serena)/.test(name)) s += 15;
-
-    return s;
-  }
-
-  function pickVoice(voiceURI) {
-    const voices = synth.getVoices();
-    if (!voices.length) return null;
-
-    // An explicit user choice from the popup always takes precedence.
-    if (voiceURI) {
-      const match = voices.find((v) => v.voiceURI === voiceURI);
-      if (match) return match;
-    }
-
-    // Otherwise pick the highest-scoring available voice.
-    return voices.reduce((best, v) =>
-      scoreVoice(v) > scoreVoice(best) ? v : best
-    );
-  }
-
   async function speak() {
     const text = getOverviewText();
     if (!text) {
       flashButton("No summary found");
       return { ok: false, reason: "not-found" };
     }
-
-    synth.cancel(); // clear anything queued
-    const settings = await loadSettings();
-
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.rate = settings.rate;
-    utter.pitch = settings.pitch;
-    const voice = pickVoice(settings.voiceURI);
-    if (voice) utter.voice = voice;
-
-    utter.onend = () => updateButton("idle");
-    utter.onerror = () => updateButton("idle");
-
-    synth.speak(utter);
-    updateButton("playing");
+    await speakText(text, {
+      onstart: () => updateButton("playing"),
+      onend: () => updateButton("idle"),
+      onerror: () => updateButton("idle"),
+    });
     return { ok: true };
-  }
-
-  function statusOf() {
-    if (synth.speaking && synth.paused) return "paused";
-    if (synth.speaking) return "playing";
-    return "idle";
   }
 
   // ---------------------------------------------------------------------------
@@ -281,18 +205,6 @@
       case "status":
         sendResponse({ status: statusOf(), hasOverview: !!getOverviewText() });
         break;
-      case "voices": {
-        const defaultVoice = pickVoice("");
-        sendResponse({
-          defaultVoiceURI: defaultVoice ? defaultVoice.voiceURI : "",
-          voices: synth.getVoices().map((v) => ({
-            name: v.name,
-            lang: v.lang,
-            voiceURI: v.voiceURI,
-          })),
-        });
-        break;
-      }
       default:
         sendResponse({ error: "unknown-action" });
     }

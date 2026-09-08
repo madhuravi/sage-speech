@@ -9,7 +9,7 @@
         --bg: #ffffff;
         --fg: #202124;
         --muted: #5f6368;
-        --accent: #1a73e8;
+        --accent: #788d63;
         --border: #dadce0;
         --field: #f1f3f4;
       }
@@ -18,7 +18,7 @@
           --bg: #202124;
           --fg: #e8eaed;
           --muted: #9aa0a6;
-          --accent: #8ab4f8;
+          --accent: #a7bd8b;
           --border: #3c4043;
           --field: #303134;
         }
@@ -81,6 +81,35 @@
       .row { display: flex; align-items: center; gap: 8px; }
       .row output { font-size: 12px; color: var(--muted); min-width: 30px; text-align: right; }
       .hint { font-size: 11px; color: var(--muted); margin-top: 14px; }
+      .site {
+        margin-top: 16px;
+        padding-top: 14px;
+        border-top: 1px solid var(--border);
+      }
+      .site label { margin-top: 0; }
+      #siteHint { margin-top: 8px; }
+      #siteList { margin-top: 10px; }
+      #siteList .site-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 6px 0;
+        font-size: 12px;
+        border-top: 1px solid var(--border);
+      }
+      #siteList .site-item span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #siteList .remove {
+        flex: none;
+        padding: 3px 8px;
+        font-size: 11px;
+        border-radius: 6px;
+      }
+      #siteList .empty { font-size: 11px; color: var(--muted); padding: 4px 0; }
     </style>
   </head>
   <body>
@@ -105,6 +134,13 @@
     <label for="pitch">Pitch <span id="pitchVal">1.0</span></label>
     <div class="row">
       <input type="range" id="pitch" min="0" max="2" step="0.1" value="1" />
+    </div>
+
+    <div class="site" id="siteSection" hidden>
+      <label>Read highlighted text</label>
+      <button id="siteToggle" style="width: 100%; text-align: center;">Enable on this site</button>
+      <div class="hint" id="siteHint"></div>
+      <div id="siteList"></div>
     </div>
 
     <div class="hint" id="hint">
