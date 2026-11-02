@@ -17,24 +17,28 @@
   // selection for window.getSelection() to return — the 🔊 bubble can never
   // appear and "read the highlighted text" can't work. Instead, on a Docs
   // document we read the *whole* document, fetched as plain text from its
-  // same-origin export URL. The fetch runs in the background worker (which
-  // isn't subject to the page's CSP) via the "fetchDocText" message.
+  // export URL.
   const DOCS_ID = (() => {
     if (location.hostname !== "docs.google.com") return null;
     const m = location.pathname.match(/\/document\/(?:u\/\d+\/)?d\/([^/]+)/);
     return m ? m[1] : null;
   })();
 
-  function requestDocText(docId) {
-    return new Promise((resolve) => {
-      try {
-        chrome.runtime.sendMessage({ action: "fetchDocText", docId }, (resp) =>
-          resolve(chrome.runtime.lastError ? null : resp)
-        );
-      } catch (_) {
-        resolve(null);
-      }
-    });
+  // Fetch the document as plain text. This MUST run in the content script (not
+  // the background worker): the page's origin is docs.google.com, so a
+  // credentials:"same-origin" fetch sends the session cookies that authorize
+  // the export, while dropping them on the cross-origin redirect to the
+  // googleusercontent.com download host — which answers with
+  // `Access-Control-Allow-Origin: *`, a value CORS forbids on credentialed
+  // requests. A background fetch, cross-origin to docs.google.com, can't thread
+  // that needle without an extra *.googleusercontent.com host grant.
+  async function fetchDocText(docId) {
+    const url = `https://docs.google.com/document/d/${encodeURIComponent(
+      docId
+    )}/export?format=txt`;
+    const res = await fetch(url, { credentials: "same-origin" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return await res.text();
   }
 
   // --- Floating bubble (isolated in a shadow root so page CSS can't touch it) ---
@@ -154,18 +158,18 @@
   // Returns true when the response will be sent asynchronously (Docs path).
   function handleReadSelection(sendResponse) {
     if (DOCS_ID) {
-      requestDocText(DOCS_ID).then((resp) => {
-        if (!resp || !resp.ok) {
-          sendResponse({ ok: false, reason: "doc-fetch-failed", status: S.statusOf() });
-          return;
-        }
-        const text = (resp.text || "").trim();
-        if (!text) {
-          sendResponse({ ok: false, reason: "empty-document", status: S.statusOf() });
-          return;
-        }
-        speakAndRespond(text, sendResponse);
-      });
+      fetchDocText(DOCS_ID)
+        .then((raw) => {
+          const text = (raw || "").trim();
+          if (!text) {
+            sendResponse({ ok: false, reason: "empty-document", status: S.statusOf() });
+            return;
+          }
+          speakAndRespond(text, sendResponse);
+        })
+        .catch(() =>
+          sendResponse({ ok: false, reason: "doc-fetch-failed", status: S.statusOf() })
+        );
       return true; // keep the message channel open for the async reply
     }
 
