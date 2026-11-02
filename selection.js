@@ -191,12 +191,15 @@
       case "pause":
         synth.pause();
         render("paused");
-        sendResponse({ status: S.statusOf() });
+        // Report the intended state directly: synth.pause() is async, so
+        // S.statusOf() often still reads "playing" here and leaves the popup's
+        // Resume button disabled until a second click.
+        sendResponse({ status: "paused" });
         return false;
       case "resume":
         synth.resume();
         render("playing");
-        sendResponse({ status: S.statusOf() });
+        sendResponse({ status: "playing" });
         return false;
       case "stop":
         synth.cancel();
