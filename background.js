@@ -130,9 +130,35 @@ async function reconcile() {
   }
   for (const origin of optIn) {
     await registerSite(origin);
+    await injectOpenTabs(origin); // reloaded extension → re-arm already-open tabs
   }
   await setEnabled(optIn);
 }
 
 chrome.runtime.onInstalled.addListener(reconcile);
 chrome.runtime.onStartup.addListener(reconcile);
+
+// Fallback for the popup: when the user clicks Enable but the permission was
+// already granted, Chrome shows no prompt and fires no onAdded event — so the
+// popup asks us to make sure the site is set up.
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg && msg.action === "ensureSite" && msg.origin) {
+    enableOrigin(msg.origin).then(() => sendResponse({ ok: true }));
+    return true; // async response
+  }
+  // Google Docs renders text to <canvas>, so the "read highlighted text" reader
+  // can't see a selection there; instead selection.js asks us to fetch the whole
+  // document as plain text. We fetch here (not in the content script) to avoid
+  // the Docs page's CSP; the user's session cookies ride along via credentials.
+  if (msg && msg.action === "fetchDocText" && msg.docId) {
+    const url = `https://docs.google.com/document/d/${encodeURIComponent(
+      msg.docId
+    )}/export?format=txt`;
+    fetch(url, { credentials: "include" })
+      .then((r) => (r.ok ? r.text() : Promise.reject(new Error("HTTP " + r.status))))
+      .then((text) => sendResponse({ ok: true, text }))
+      .catch((e) => sendResponse({ ok: false, error: String(e) }));
+    return true; // async response
+  }
+  return false;
+});

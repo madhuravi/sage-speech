@@ -7,6 +7,10 @@ const $ = (id) => document.getElementById(id);
 const statusEl = $("status");
 const hintEl = $("hint");
 
+// What the popup's Listen button does on the current tab: read Google's AI
+// summary ("play") or read the page's current text selection ("readSelection").
+let playAction = "play";
+
 async function activeTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return tab;
@@ -14,6 +18,12 @@ async function activeTab() {
 
 function onGoogleSearch(tab) {
   return tab && /^https:\/\/www\.google\.[^/]+\/search/.test(tab.url || "");
+}
+
+// A Google Docs document. Selection can't be read there (canvas rendering), so
+// "Listen" reads the whole document instead.
+function onGoogleDocs(tab) {
+  return tab && /^https:\/\/docs\.google\.com\/document\//.test(tab.url || "");
 }
 
 // Message the active tab's content script; resolve to null if none is present.
@@ -137,10 +147,17 @@ async function initSiteToggle(tab) {
     } else {
       toggle.hidden = false;
       const on = enabled.includes(origin);
+      const isDocs = host === "docs.google.com";
       toggle.textContent = on ? "Disable on this site" : "Enable on this site";
-      hint.innerHTML = on
-        ? `Select any text on <b>${host}</b> and a 🔊 button appears to read it.`
-        : `Turn on to read any text you highlight on <b>${host}</b> aloud.`;
+      if (isDocs) {
+        hint.innerHTML = on
+          ? `Press Listen to read the whole document on <b>${host}</b> aloud.`
+          : `Turn on to read documents on <b>${host}</b> aloud.`;
+      } else {
+        hint.innerHTML = on
+          ? `Select any text on <b>${host}</b> and a 🔊 button appears to read it.`
+          : `Turn on to read any text you highlight on <b>${host}</b> aloud.`;
+      }
     }
 
     // --- List of all enabled sites, each revocable ---
@@ -176,7 +193,11 @@ async function initSiteToggle(tab) {
     if (enabledList.includes(origin)) {
       chrome.permissions.remove({ origins: [originPattern(origin)] });
     } else {
-      chrome.permissions.request({ origins: [originPattern(origin)] });
+      chrome.permissions.request({ origins: [originPattern(origin)] }).then((granted) => {
+        // If the permission was already held, no prompt/onAdded fires — so tell
+        // the background worker to set the site up anyway.
+        if (granted) chrome.runtime.sendMessage({ action: "ensureSite", origin });
+      });
     }
     // The background worker reacts to the permission change and updates storage;
     // render() re-runs via the storage listener below. (This handler may not even
@@ -228,31 +249,49 @@ async function init() {
   // Per-site highlighted-text toggle.
   await initSiteToggle(tab);
 
-  // Google AI Overview controls.
-  if (!onGoogleSearch(tab)) {
-    ["play", "pause", "resume", "stop"].forEach((id) => ($(id).disabled = true));
-    setStatus("Open a Google search to read its AI summary.");
-    hintEl.textContent =
-      "The buttons above read Google's AI summary. Highlighted-text reading works via the toggle below.";
-    return;
-  }
+  // Playback controls. On Google search pages Listen reads the AI summary; on a
+  // site you've enabled it reads whatever text you've highlighted on the page.
+  const origin = siteOrigin(tab);
+  const enabledOrigins = await getEnabledOrigins();
+  const siteEnabled = origin && enabledOrigins.includes(origin);
 
-  hintEl.textContent =
-    "Press Listen to read the AI summary at the top of the results.";
-  const st = await send("status");
-  if (st) {
-    reflect(st.status);
-    if (!st.hasOverview) setStatus("No AI summary detected on this page.");
+  if (onGoogleSearch(tab)) {
+    playAction = "play";
+    hintEl.textContent =
+      "Press Listen to read the AI summary at the top of the results.";
+    const st = await send("status");
+    if (st) {
+      reflect(st.status);
+      if (!st.hasOverview) setStatus("No AI summary detected on this page.");
+    } else {
+      setStatus("Reload the search page, then reopen this popup.");
+    }
+  } else if (siteEnabled) {
+    playAction = "readSelection";
+    $("play").disabled = false;
+    hintEl.textContent = onGoogleDocs(tab)
+      ? "Press Listen to read the whole document aloud. (Google Docs doesn't expose highlighted text, so selection reading isn't available here.)"
+      : "Highlight text on the page, then press Listen — or click the 🔊 bubble that appears.";
+    const st = await send("status");
+    if (st) reflect(st.status);
+    else if (onGoogleDocs(tab)) setStatus("Press Listen to read the document.");
+    else setStatus("Highlight text, then press Listen.");
   } else {
-    setStatus("Reload the search page, then reopen this popup.");
+    ["play", "pause", "resume", "stop"].forEach((id) => ($(id).disabled = true));
+    setStatus("Open a Google search, or enable this site below.");
+    hintEl.textContent =
+      "Listen reads Google's AI summary, or text you highlight on sites you enable.";
   }
 }
 
 // ---- Event wiring ----------------------------------------------------------
 $("play").addEventListener("click", async () => {
-  const r = await send("play");
+  const r = await send(playAction);
   if (!r) setStatus("Could not reach the page — try reloading it.");
   else if (r.reason === "not-found") setStatus("No AI summary found.");
+  else if (r.reason === "no-selection") setStatus("Highlight some text on the page first.");
+  else if (r.reason === "doc-fetch-failed") setStatus("Couldn't read this document.");
+  else if (r.reason === "empty-document") setStatus("This document appears to be empty.");
   else reflect(r.status || "playing");
 });
 

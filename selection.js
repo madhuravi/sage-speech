@@ -13,6 +13,30 @@
 
   let currentText = ""; // the selection captured when the bubble was shown
 
+  // Google Docs renders its text into <canvas>, so there is no real DOM
+  // selection for window.getSelection() to return — the 🔊 bubble can never
+  // appear and "read the highlighted text" can't work. Instead, on a Docs
+  // document we read the *whole* document, fetched as plain text from its
+  // same-origin export URL. The fetch runs in the background worker (which
+  // isn't subject to the page's CSP) via the "fetchDocText" message.
+  const DOCS_ID = (() => {
+    if (location.hostname !== "docs.google.com") return null;
+    const m = location.pathname.match(/\/document\/(?:u\/\d+\/)?d\/([^/]+)/);
+    return m ? m[1] : null;
+  })();
+
+  function requestDocText(docId) {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage({ action: "fetchDocText", docId }, (resp) =>
+          resolve(chrome.runtime.lastError ? null : resp)
+        );
+      } catch (_) {
+        resolve(null);
+      }
+    });
+  }
+
   // --- Floating bubble (isolated in a shadow root so page CSS can't touch it) ---
   const host = document.createElement("div");
   host.style.cssText =
@@ -114,6 +138,74 @@
     // No selection: hide the bubble unless we're mid-playback (keep the control).
     if (S.statusOf() === "idle") hideBubble();
   }
+
+  // Speak the given text and answer the popup. Shared by the selection and
+  // whole-document paths.
+  function speakAndRespond(text, sendResponse) {
+    currentText = text;
+    S.speakText(text, {
+      onstart: () => render("playing"),
+      onend: () => render("idle"),
+      onerror: () => render("idle"),
+    });
+    sendResponse({ ok: true, status: "playing" });
+  }
+
+  // Returns true when the response will be sent asynchronously (Docs path).
+  function handleReadSelection(sendResponse) {
+    if (DOCS_ID) {
+      requestDocText(DOCS_ID).then((resp) => {
+        if (!resp || !resp.ok) {
+          sendResponse({ ok: false, reason: "doc-fetch-failed", status: S.statusOf() });
+          return;
+        }
+        const text = (resp.text || "").trim();
+        if (!text) {
+          sendResponse({ ok: false, reason: "empty-document", status: S.statusOf() });
+          return;
+        }
+        speakAndRespond(text, sendResponse);
+      });
+      return true; // keep the message channel open for the async reply
+    }
+
+    const sel = window.getSelection();
+    const text = sel ? sel.toString().trim() : "";
+    if (!text) {
+      sendResponse({ ok: false, reason: "no-selection", status: S.statusOf() });
+      return false;
+    }
+    speakAndRespond(text, sendResponse);
+    return false;
+  }
+
+  // --- Popup control (the Listen / Pause / Resume / Stop buttons) ---
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    switch (msg && msg.action) {
+      case "readSelection":
+        return handleReadSelection(sendResponse);
+      case "pause":
+        synth.pause();
+        render("paused");
+        sendResponse({ status: S.statusOf() });
+        return false;
+      case "resume":
+        synth.resume();
+        render("playing");
+        sendResponse({ status: S.statusOf() });
+        return false;
+      case "stop":
+        synth.cancel();
+        render("idle");
+        sendResponse({ status: "idle" });
+        return false;
+      case "status":
+        sendResponse({ status: S.statusOf() });
+        return false;
+      default:
+        return false; // let other listeners (e.g. content.js) handle it
+    }
+  });
 
   document.addEventListener("mouseup", onSelectionChanged);
   document.addEventListener("keyup", (e) => {
